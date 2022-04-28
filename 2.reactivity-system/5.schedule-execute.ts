@@ -1,6 +1,5 @@
-// 重新设计当前activeEffect的数据结构
-// 避免同时只有一个activeEffect引发的嵌套回调永远指向内层effect的问题
-// 增加相同副作用函数引用判断，避免无限循环
+// 将副作用函数的控制权通过可选的schedule配置反转给用户
+// 需要更改EffectFn的结构
 
 // 副作用函数容器
 const effectsBuckets = new WeakMap<
@@ -11,6 +10,9 @@ const effectsBuckets = new WeakMap<
 interface EffectFn {
   (): void
   deps: Set<EffectFn>[]
+  options?: {
+    scheduler?: (fn: () => void) => void
+  }
 }
 
 // 全局变量用于当前活动的副作用函数
@@ -19,7 +21,7 @@ let activeEffect: EffectFn = null
 const effectStack: EffectFn[] = []
 
 // 专门由effect函数进行副作用收集
-function effect(fn) {
+function effect(fn, options = {}) {
   const effectFn: EffectFn = () => {
     // 先清除之前的副作用
     cleanup(effectFn)
@@ -35,6 +37,7 @@ function effect(fn) {
     activeEffect = effectStack[effectStack.length - 1]
   }
   effectFn.deps = []
+  effectFn.options = options
   effectFn()
 }
 
@@ -49,8 +52,6 @@ function cleanup(effectFn: EffectFn) {
 }
 
 const originData = {
-  foo: true,
-  bar: true,
   count: 1,
 }
 
@@ -111,26 +112,38 @@ function trigger(target, key) {
     }
   })
 
-  effectsToRun?.forEach((fn) => fn?.())
+  effectsToRun?.forEach((fn) => {
+    if (fn?.options?.scheduler) {
+      fn.options.scheduler(fn)
+    } else {
+      fn()
+    }
+  })
 }
 
-let temp1, temp2
+// without schedule, log: 1, 2, ending
+// effect(() => {
+//   console.log(proxyData.count)
+// })
 
-effect(function fn1() {
-  console.log('fn1执行')
-  effect(function fn2() {
-    console.log('fn2执行')
-    temp2 = proxyData.bar
-  })
-  temp1 = proxyData.foo
-})
+// proxyData.count++
 
-effect(() => {
-  proxyData.count++
-})
+// console.log('ending')
 
-setTimeout(() => {
-  proxyData.foo = false
-}, 1000)
+// without schedule, log: 1, ending, 2
+effect(
+  () => {
+    console.log(proxyData.count)
+  },
+  {
+    scheduler(fn) {
+      setTimeout(fn)
+    },
+  }
+)
+
+proxyData.count++
+
+console.log('ending')
 
 export {}
