@@ -1,4 +1,8 @@
-// 利用schedule构建一个简易的批量更新effect
+// watch的基本实现原理是监听一个对象，然后利用schedule进行处理
+// 简单来说用effect+schedule就能实现
+// 如下例的simpleWatch
+// 同时通过一个traverse函数用来遍历对象触发getter
+// 利用lazy属性，进行新旧值传递
 
 // 副作用函数容器
 const effectsBuckets = new WeakMap<
@@ -6,12 +10,15 @@ const effectsBuckets = new WeakMap<
   Map<string | Symbol, Set<EffectFn>>
 >()
 
+interface EffectFnOptions {
+  scheduler?: (fn: () => void) => void
+  lazy?: boolean
+}
+
 interface EffectFn {
   (): void
   deps: Set<EffectFn>[]
-  options?: {
-    scheduler?: (fn: () => void) => void
-  }
+  options?: EffectFnOptions
 }
 
 // 全局变量用于当前活动的副作用函数
@@ -20,7 +27,7 @@ let activeEffect: EffectFn = null
 const effectStack: EffectFn[] = []
 
 // 专门由effect函数进行副作用收集
-function effect(fn, options = {}) {
+function effect(fn, options: EffectFnOptions = {}) {
   const effectFn: EffectFn = () => {
     // 先清除之前的副作用
     cleanup(effectFn)
@@ -28,16 +35,23 @@ function effect(fn, options = {}) {
     activeEffect = effectFn
     // 压栈
     effectStack.push(effectFn)
-    // 执行fn
-    fn()
+    // 执行fn，用res接受
+    const res = fn()
     // 出栈
     effectStack.pop()
     // 当前活动副作用指向正确位置
     activeEffect = effectStack[effectStack.length - 1]
+    // 将res返回
+    return res
   }
   effectFn.deps = []
   effectFn.options = options
-  effectFn()
+  // 如果不是懒执行，跟以前一样立即执行
+  if (!options?.lazy) {
+    effectFn()
+  }
+  // 否则返回一个getter函数
+  return effectFn
 }
 
 function cleanup(effectFn: EffectFn) {
@@ -52,6 +66,8 @@ function cleanup(effectFn: EffectFn) {
 
 const originData = {
   count: 1,
+  foo: 2,
+  bar: 3,
 }
 
 const proxyData = new Proxy(originData, {
@@ -120,38 +136,80 @@ function trigger(target, key) {
   })
 }
 
-const jobQueue = new Set<() => void>()
-
-// 用微任务的方式进行调度
-const p = Promise.resolve()
-
-let isFlushing = false
-
-function flushJob() {
-  if (isFlushing) return
-
-  isFlushing = true
-
-  p.then(() => {
-    jobQueue.forEach((job) => job())
-  }).finally(() => {
-    isFlushing = false
+//#region watch 的最简单实现
+// 硬编码了响应式数据
+function simpleWatch(source, cb: Function) {
+  effect(() => source.foo, {
+    scheduler() {
+      cb()
+    },
   })
 }
 
-effect(
-  () => {
-    console.log(proxyData.count)
-  },
-  {
-    scheduler(fn) {
-      jobQueue.add(fn)
-      flushJob()
-    },
-  }
-)
+simpleWatch(proxyData, () => {
+  console.log('simple watched data.foo changed')
+})
 
-proxyData.count++
-proxyData.count++
+proxyData.foo++
+//#endregion
+
+// watch 函数的实现，目前只处理对象
+function watch(source, cb: (newValue: any, oldValue: any) => void) {
+  let getter
+
+  //! 利用这个特性，可以实现watch的首个参数直接传递一个getter函数
+  // 处理getter
+  if (typeof source === 'function') {
+    getter = source
+  } else {
+    getter = () => traverse(source)
+  }
+
+  // 新旧值
+  let oldValue
+  let newValue
+
+  const effectFn = effect(() => getter(), {
+    scheduler() {
+      //! 重新执行effect，取得最新值
+      newValue = effectFn()
+
+      // 将新值和旧值传递给cb
+      cb(newValue, oldValue)
+
+      //! 更新旧值
+      oldValue = newValue
+    },
+    // 利用这个特性，获取正确新旧值
+    lazy: true,
+  })
+
+  //! 执行effect，取得初始值
+  oldValue = effectFn()
+}
+
+// 通过traverse函数对source进行遍历，从而正确触发getter
+function traverse(source, seen = new Set()) {
+  // 如果是原始值
+  if (typeof source !== 'object' || source === null) return
+  // 如果已经读取过了
+  if (seen.has(source)) return
+
+  // 将读取过的对象放入seen
+  seen.add(source)
+
+  // 遍历source的所有属性
+  for (const key in source) {
+    traverse(source[key], seen)
+  }
+
+  return source
+}
+
+watch(proxyData, () => {
+  console.log('watched data.bar changed')
+})
+
+proxyData.bar++
 
 export {}

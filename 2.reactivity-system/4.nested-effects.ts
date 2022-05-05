@@ -21,7 +21,7 @@ const effectStack: EffectFn[] = []
 // 专门由effect函数进行副作用收集
 function effect(fn) {
   const effectFn: EffectFn = () => {
-    // 先清除之前的副作用
+    //! 先清除之前的副作用
     cleanup(effectFn)
     // 注册fn时将当前activeEffect指向fn
     activeEffect = effectFn

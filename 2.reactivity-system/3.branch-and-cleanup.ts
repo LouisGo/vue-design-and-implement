@@ -20,7 +20,7 @@ let activeEffect = null
 // 专门由effect函数进行副作用收集
 function effect(fn) {
   const effectFn: EffectFn = () => {
-    // 先清除之前的副作用
+    //! 先清除之前的副作用
     cleanup(effectFn)
     // 注册fn时将当前activeEffect指向fn
     activeEffect = effectFn
@@ -92,7 +92,7 @@ function trigger(target, key) {
 
   const effects = depsMap.get(key)
 
-  // 避免forEach中操作原来的Set
+  //! 避免forEach中操作原来的Set
   // 从而导致一边cleanup进行delete，一边进行add触发无限循环
   // 因而重新构造一个新的Set
   const effectsToRun = new Set(effects)
