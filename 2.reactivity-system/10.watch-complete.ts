@@ -25,7 +25,7 @@ let activeEffect: EffectFn = null
 const effectStack: EffectFn[] = []
 
 // 专门由effect函数进行副作用收集
-function effect(fn, options: EffectFnOptions = {}) {
+export function effect(fn, options: EffectFnOptions = {}) {
   const effectFn: EffectFn = () => {
     // 先清除之前的副作用
     cleanup(effectFn)
@@ -52,7 +52,7 @@ function effect(fn, options: EffectFnOptions = {}) {
   return effectFn
 }
 
-function cleanup(effectFn: EffectFn) {
+export function cleanup(effectFn: EffectFn) {
   // 遍历清除副作用
   for (let i = 0; i < effectFn.deps.length; i++) {
     const deps = effectFn.deps[i]
@@ -62,13 +62,16 @@ function cleanup(effectFn: EffectFn) {
   effectFn.deps.length = 0
 }
 
-const originData = {
+export const originData = {
   count: 1,
   foo: 2,
   bar: 3,
+  get reflect() {
+    return this.foo
+  },
 }
 
-const proxyData = new Proxy(originData, {
+export const proxyData = new Proxy(originData, {
   // 拦截读取操作
   get(target, key) {
     track(target, key)
@@ -85,7 +88,7 @@ const proxyData = new Proxy(originData, {
   },
 })
 
-function track(target, key) {
+export function track(target, key) {
   if (!activeEffect) return target[key]
 
   let depsMap = effectsBuckets.get(target)
@@ -106,7 +109,7 @@ function track(target, key) {
   activeEffect.deps.push(deps)
 }
 
-function trigger(target, key) {
+export function trigger(target, key) {
   const depsMap = effectsBuckets.get(target)
 
   if (!depsMap) return
@@ -227,7 +230,7 @@ watch(
   }
 )
 
-//# region 测试onInvalidate
+//#region 测试onInvalidate
 // 通过expired来处理最终数据的赋值
 
 let finalData = 0
@@ -271,7 +274,6 @@ function fakeFetch(): Promise<number> {
     }, timeout)
   })
 }
-
-//# endregion
+//#endregion
 
 export {}

@@ -137,7 +137,7 @@ function trigger(target, key) {
 }
 
 //#region watch 的最简单实现
-// 硬编码了响应式数据
+// 硬编码了响应式数据source.foo
 function simpleWatch(source, cb: Function) {
   effect(() => source.foo, {
     scheduler() {
