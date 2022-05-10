@@ -1,6 +1,3 @@
-// 提前引入上文依赖，方便讲解
-// import { originData, proxyData, effect } from './10.watch-complete'
-
 // Proxy 可以创建一个【代理对象】
 // 代理指的对一个对象【基本语义】的代理
 // 它允许【拦截】并【重新定义】一个对象的【基本操作】
@@ -19,7 +16,7 @@ obj.foo++ // 读取和设置属性
 
 // 这种属性值的读取和设置是可以被Proxy代理的，属于【基本操作】
 // 第一个参数obj：被代理的原始对象
-// 第二个参数trap对象：用来设置兑取和设置属性的拦截器
+// 第二个参数trap对象：用来设置读取和设置属性的拦截器
 const p1 = new Proxy(obj, {
   get() {},
   // @ts-ignore
@@ -55,5 +52,5 @@ console.log(obj.bar) // 1
 // 此时跟上面是等价的
 console.log(Reflect.get(obj, 'bar')) // 1
 
-// 加上第三个 receiver 对象参数后，读取到的便是receiver的值，有点像改变this的指向
+// 加上第三个 receiver 对象参数后，读取到的便是receiver的值，有点像call和bind改变this的指向
 console.log(Reflect.get(obj, 'bar', { foo: 5 })) // 5
