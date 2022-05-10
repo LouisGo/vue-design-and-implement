@@ -1,6 +1,6 @@
-// 对对象代理的详细实现
-// 处理 for in 操作
-// 处理 delete 操作
+// 对于对象原型继承的代理特殊处理
+// 主要方式是通过判断target和receiver的对应关系
+// 在getter和setter中增加一个RAW_KEY用来判断
 
 // 副作用函数容器
 const effectsBuckets = new WeakMap<
@@ -62,15 +62,6 @@ export function cleanup(effectFn: EffectFn) {
   effectFn.deps.length = 0
 }
 
-export const originData = {
-  count: 1,
-  foo: 2,
-  bar: 3,
-  get reflect() {
-    return this.foo
-  },
-}
-
 const enum TriggerType {
   add = 'add',
   set = 'set',
@@ -78,6 +69,8 @@ const enum TriggerType {
 }
 
 const ITERATE_KEY = Symbol('iterate')
+
+const RAW_KEY = Symbol('raw')
 
 //! 用一个reactive对象代理一个对象
 function reactive<T extends object>(target: T): T {
@@ -105,25 +98,43 @@ function reactive<T extends object>(target: T): T {
     },
     // 拦截读取操作
     get(target, key, receiver) {
+      //! 增加一个RAW_KEY，用于访问原始对象
+      if (key === RAW_KEY) {
+        return target
+      }
+
       track(target, key)
 
       return Reflect.get(target, key, receiver)
     },
     // 拦截设置操作
     set(target, key, newVal, receiver) {
+      // before:
+      // child的setter中，target是originChild对象，receiver是proxyChild对象
+      // 到了原型上的parent的setter中，target是orginParent对象，receiver还是proxyChild对象
+
+      console.log(target)
+      console.log(receiver)
+
       // 先获取旧值，便于后面比较
       const oldValue = target[key]
 
-      //! 判断是新增属性还是修改属性
+      // 判断是新增属性还是修改属性
       const type = Object.prototype.hasOwnProperty.call(target, key)
         ? TriggerType.set
         : TriggerType.add
 
       const res = Reflect.set(target, key, newVal, receiver)
 
-      //! 前面全等判断，后面进行NaN判断
-      if (oldValue !== newVal && (oldValue === oldValue || newVal === newVal)) {
-        trigger(target, key, type)
+      //! 只有target等于receiver的原始对象（通过getter里面的特殊返回值判断）时，才需要进行trigger
+      if (target === receiver[RAW_KEY]) {
+        // 前面全等判断，后面进行NaN判断
+        if (
+          oldValue !== newVal &&
+          (oldValue === oldValue || newVal === newVal)
+        ) {
+          trigger(target, key, type)
+        }
       }
 
       return res
@@ -171,7 +182,7 @@ export function trigger(target, key, type: TriggerType = TriggerType.add) {
     }
   })
 
-  //! 只有在新增或者删除类型时才需要触发，避免不必要的性能损耗
+  // 只有在新增或者删除类型时才需要触发，避免不必要的性能损耗
   if (type === TriggerType.add || type === TriggerType.delete) {
     // 取得与ITERATE_KEY关联的副作用函数
     const iterateEffects = depsMap.get(ITERATE_KEY)
@@ -193,15 +204,30 @@ export function trigger(target, key, type: TriggerType = TriggerType.add) {
   })
 }
 
-const demoData = reactive(originData)
+const originChild = {}
 
-// 都能代理到
+const originParent = {
+  bar: 1,
+}
+
+const proxyChild = reactive(originChild)
+
+const proxyParent = reactive(originParent)
+
+//! 使用proxyParent作为proxyChild的原型
+Object.setPrototypeOf(proxyChild, proxyParent)
+
+// rerender demo
 effect(() => {
-  for (const key in demoData) {
-    console.log(key)
-  }
+  // before: 1, 2, 2
+  // after: 1, 2
+  console.log((proxyChild as any).bar)
 })
 
-delete demoData.foo
+// 触发proxyChild.bar的getter时，因为代理的对象proxyChild自身没有，就会到原型上去找（也就是proxyParent）
+// 此时proxyChild和proxyParent都建立了响应式联系
+// 同理，触发setter时，也会到原型上去找（也就是proxyParent），因此不改就触发了2次
+// @ts-ignore
+proxyChild.bar++ // before: 引发2次相同的副作用函数
 
 export {}
